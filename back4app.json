@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "start": "node index.js"
+  },
+  "env": {
+    "PORT": "3000"
+  }
+}
