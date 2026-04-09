@@ -1,0 +1,9 @@
+[
+  {
+    "id": "admin-uuid",
+    "username": "admin",
+    "password_hash": "$2a$10$N9qo8uLOickgx2ZMRZoMy.Mr/.wFqRZ5J5H5qJ5qJ5qJ5qJ5qJ5q",
+    "ativo": true,
+    "created_at": "2024-01-01T00:00:00.000Z"
+  }
+]
