@@ -1,17 +1,19 @@
 {
-  "name": "backend-mesas-back4app",
+  "name": "sistema-reservas-mesas",
   "version": "1.0.0",
-  "description": "Sistema de reserva de mesas para eventos - Backend",
-  "main": "index.js",
+  "description": "API para sistema de reserva de mesas com Docker",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "docker:build": "docker build -t sistema-reservas-mesas .",
+    "docker:run": "docker run -p 3000:3000 --env-file .env sistema-reservas-mesas"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "axios": "^1.5.0"
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
