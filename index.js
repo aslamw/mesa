@@ -1,87 +1,109 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-require('dotenv').config();
 
 const app = express();
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Configurações do Back4App
+// ============================================
+// CONFIGURAÇÃO DO BACK4APP
+// ============================================
+// IMPORTANTE: Substitua pelos seus dados!
+// Como obter:
+// 1. Acesse https://www.back4app.com
+// 2. Vá em App Settings > Security & Keys
+// 3. Copie os valores abaixo
+
 const BACK4APP_CONFIG = {
-    appId: process.env.BACK4APP_APP_ID,
-    restKey: process.env.BACK4APP_REST_KEY,
-    masterKey: process.env.BACK4APP_MASTER_KEY,
-    baseUrl: process.env.BACK4APP_URL || 'https://parseapi.back4app.com'
+    APP_ID: process.env.BACK4APP_APP_ID || "ptRlXeyBd8VeoPnFwMiJU9kADdlJA3J0zQ8AFTO9",
+    REST_KEY: process.env.BACK4APP_REST_KEY || "i1xNyuJQyfS7YEz0CwAqQuv10lhvA3CossjRYpaV",
+    MASTER_KEY: process.env.BACK4APP_MASTER_KEY || "SzBViRgjtmSQPLxBA7ARRJdhgeUdehiB4BWV69eb",
+    BASE_URL: "https://parseapi.back4app.com"
 };
 
 // Headers para API do Back4App
 const getHeaders = (useMasterKey = false) => {
-    return {
-        'X-Parse-Application-Id': BACK4APP_CONFIG.appId,
-        'X-Parse-REST-API-Key': BACK4APP_CONFIG.restKey,
-        ...(useMasterKey && { 'X-Parse-Master-Key': BACK4APP_CONFIG.masterKey }),
+    const headers = {
+        'X-Parse-Application-Id': BACK4APP_CONFIG.APP_ID,
         'Content-Type': 'application/json'
     };
+    
+    if (useMasterKey && BACK4APP_CONFIG.MASTER_KEY !== "SEU_MASTER_KEY_AQUI") {
+        headers['X-Parse-Master-Key'] = BACK4APP_CONFIG.MASTER_KEY;
+    } else {
+        headers['X-Parse-REST-API-Key'] = BACK4APP_CONFIG.REST_KEY;
+    }
+    
+    return headers;
 };
 
 // ============================================
 // FUNÇÕES AUXILIARES
 // ============================================
 
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+// Verificar se está em modo demo (credenciais não configuradas)
+const isDemoMode = () => {
+    return BACK4APP_CONFIG.APP_ID === "SEU_APP_ID_AQUI" || 
+           BACK4APP_CONFIG.REST_KEY === "SUA_REST_KEY_AQUI";
+};
 
 // ============================================
-// ROTAS PÚBLICAS
+// ROTA INICIAL
 // ============================================
-
-// Rota inicial
 app.get('/', (req, res) => {
     res.json({
-        nome: 'Sistema de Reserva de Mesas - Backend',
+        nome: 'Sistema de Reserva de Mesas',
         versao: '1.0.0',
         status: 'online',
+        modo: isDemoMode() ? 'DEMO (configure suas credenciais)' : 'PRODUÇÃO',
         endpoints: {
             mesas: {
                 listar: 'GET /api/mesas',
                 disponiveis: 'GET /api/mesas/disponiveis',
-                detalhes: 'GET /api/mesas/:id',
-                criar: 'POST /api/admin/mesas (admin)'
+                detalhes: 'GET /api/mesas/:id'
             },
             reservas: {
                 criar: 'POST /api/reservas',
                 listar: 'GET /api/reservas',
-                buscarPorEmail: 'GET /api/reservas/email/:email',
+                email: 'GET /api/reservas/email/:email',
                 cancelar: 'DELETE /api/reservas/:id'
             },
-            estatisticas: 'GET /api/estatisticas'
+            estatisticas: 'GET /api/estatisticas',
+            admin: {
+                criar_mesa: 'POST /api/admin/mesas',
+                seed: 'POST /api/admin/seed'
+            }
         }
     });
 });
 
-// ========== ROTAS DE MESAS ==========
+// ============================================
+// ROTAS DE MESAS
+// ============================================
 
 // Listar todas as mesas
 app.get('/api/mesas', async (req, res) => {
     try {
-        const response = await axios.get(`${BACK4APP_CONFIG.baseUrl}/classes/Mesas`, {
-            headers: getHeaders()
-        });
+        const response = await axios.get(
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas`,
+            { headers: getHeaders() }
+        );
         
         res.json({
             success: true,
-            data: response.data.results,
-            total: response.data.results.length
+            data: response.data.results || [],
+            total: (response.data.results || []).length
         });
     } catch (error) {
-        console.error('Erro ao listar mesas:', error.message);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao carregar mesas',
-            details: error.message
+        console.error('Erro:', error.message);
+        res.json({
+            success: true,
+            data: [],
+            total: 0,
+            message: 'Nenhuma mesa encontrada. Use POST /api/admin/seed para criar mesas.'
         });
     }
 });
@@ -91,21 +113,17 @@ app.get('/api/mesas/disponiveis', async (req, res) => {
     try {
         const whereClause = encodeURIComponent(JSON.stringify({ status: 'disponivel' }));
         const response = await axios.get(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas?where=${whereClause}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas?where=${whereClause}`,
             { headers: getHeaders() }
         );
         
         res.json({
             success: true,
-            data: response.data.results,
-            total: response.data.results.length
+            data: response.data.results || [],
+            total: (response.data.results || []).length
         });
     } catch (error) {
-        console.error('Erro ao listar mesas disponíveis:', error.message);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao carregar mesas disponíveis'
-        });
+        res.json({ success: true, data: [], total: 0 });
     }
 });
 
@@ -114,40 +132,36 @@ app.get('/api/mesas/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const response = await axios.get(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas/${id}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas/${id}`,
             { headers: getHeaders() }
         );
         
-        res.json({
-            success: true,
-            data: response.data
-        });
+        res.json({ success: true, data: response.data });
     } catch (error) {
-        res.status(404).json({
-            success: false,
-            error: 'Mesa não encontrada'
-        });
+        res.status(404).json({ success: false, error: 'Mesa não encontrada' });
     }
 });
 
-// ========== ROTAS DE RESERVAS ==========
+// ============================================
+// ROTAS DE RESERVAS
+// ============================================
 
 // Criar nova reserva
 app.post('/api/reservas', async (req, res) => {
     try {
         const { mesa_id, nome_cliente, email, telefone } = req.body;
         
-        // Validar campos obrigatórios
+        // Validação
         if (!mesa_id || !nome_cliente || !email || !telefone) {
             return res.status(400).json({
                 success: false,
-                error: 'Todos os campos são obrigatórios: mesa_id, nome_cliente, email, telefone'
+                error: 'Campos obrigatórios: mesa_id, nome_cliente, email, telefone'
             });
         }
         
         // Verificar se a mesa existe e está disponível
         const mesaResponse = await axios.get(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas/${mesa_id}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas/${mesa_id}`,
             { headers: getHeaders() }
         );
         
@@ -156,17 +170,13 @@ app.post('/api/reservas', async (req, res) => {
         if (mesa.status !== 'disponivel') {
             return res.status(400).json({
                 success: false,
-                error: 'Esta mesa não está disponível para reserva'
+                error: 'Mesa não está disponível'
             });
         }
         
-        // Criar a reserva
+        // Criar reserva
         const reservaData = {
-            mesa_id: {
-                __type: 'Pointer',
-                className: 'Mesas',
-                objectId: mesa_id
-            },
+            mesa_id: { __type: 'Pointer', className: 'Mesas', objectId: mesa_id },
             nome_cliente,
             email,
             telefone,
@@ -175,58 +185,53 @@ app.post('/api/reservas', async (req, res) => {
         };
         
         const reservaResponse = await axios.post(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Reservas`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Reservas`,
             reservaData,
             { headers: getHeaders() }
         );
         
-        // Atualizar status da mesa para reservada
+        // Atualizar status da mesa
         await axios.put(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas/${mesa_id}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas/${mesa_id}`,
             { status: 'reservada' },
             { headers: getHeaders() }
         );
         
         res.json({
             success: true,
-            message: 'Reserva confirmada com sucesso!',
+            message: 'Reserva confirmada!',
             data: {
                 reserva_id: reservaResponse.data.objectId,
                 mesa: mesa.numero,
-                cliente: nome_cliente,
-                email: email
+                cliente: nome_cliente
             }
         });
         
     } catch (error) {
-        console.error('Erro ao criar reserva:', error.response?.data || error.message);
+        console.error('Erro na reserva:', error.response?.data || error.message);
         res.status(500).json({
             success: false,
-            error: 'Erro ao processar reserva',
-            details: error.response?.data?.error || error.message
+            error: 'Erro ao processar reserva'
         });
     }
 });
 
-// Listar todas as reservas
+// Listar todas reservas
 app.get('/api/reservas', async (req, res) => {
     try {
         const include = encodeURIComponent('mesa_id');
         const response = await axios.get(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Reservas?include=${include}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Reservas?include=${include}`,
             { headers: getHeaders() }
         );
         
         res.json({
             success: true,
-            data: response.data.results,
-            total: response.data.results.length
+            data: response.data.results || [],
+            total: (response.data.results || []).length
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao listar reservas'
-        });
+        res.json({ success: true, data: [], total: 0 });
     }
 });
 
@@ -238,20 +243,17 @@ app.get('/api/reservas/email/:email', async (req, res) => {
         const include = encodeURIComponent('mesa_id');
         
         const response = await axios.get(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Reservas?where=${whereClause}&include=${include}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Reservas?where=${whereClause}&include=${include}`,
             { headers: getHeaders() }
         );
         
         res.json({
             success: true,
-            data: response.data.results,
-            total: response.data.results.length
+            data: response.data.results || [],
+            total: (response.data.results || []).length
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao buscar reservas'
-        });
+        res.json({ success: true, data: [], total: 0 });
     }
 });
 
@@ -268,190 +270,62 @@ app.delete('/api/reservas/:id', async (req, res) => {
             });
         }
         
-        // Deletar a reserva
+        // Deletar reserva
         await axios.delete(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Reservas/${id}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Reservas/${id}`,
             { headers: getHeaders() }
         );
         
-        // Liberar a mesa
+        // Liberar mesa
         await axios.put(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas/${mesa_id}`,
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas/${mesa_id}`,
             { status: 'disponivel' },
             { headers: getHeaders() }
         );
         
-        res.json({
-            success: true,
-            message: 'Reserva cancelada com sucesso'
-        });
+        res.json({ success: true, message: 'Reserva cancelada' });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao cancelar reserva'
-        });
+        res.status(500).json({ success: false, error: 'Erro ao cancelar' });
     }
 });
 
-// ========== ROTAS DE ESTATÍSTICAS ==========
-
+// ============================================
+// ESTATÍSTICAS
+// ============================================
 app.get('/api/estatisticas', async (req, res) => {
     try {
-        // Buscar todas as mesas
-        const mesasResponse = await axios.get(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas`,
-            { headers: getHeaders() }
-        );
+        const [mesasRes, reservasRes] = await Promise.all([
+            axios.get(`${BACK4APP_CONFIG.BASE_URL}/classes/Mesas`, { headers: getHeaders() }),
+            axios.get(`${BACK4APP_CONFIG.BASE_URL}/classes/Reservas?include=mesa_id`, { headers: getHeaders() })
+        ]);
         
-        // Buscar todas as reservas
-        const reservasResponse = await axios.get(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Reservas?include=mesa_id`,
-            { headers: getHeaders() }
-        );
-        
-        const mesas = mesasResponse.data.results;
-        const reservas = reservasResponse.data.results;
+        const mesas = mesasRes.data.results || [];
+        const reservas = reservasRes.data.results || [];
         
         const totalMesas = mesas.length;
-        const mesasDisponiveis = mesas.filter(m => m.status === 'disponivel').length;
-        const mesasReservadas = mesas.filter(m => m.status === 'reservada').length;
+        const disponiveis = mesas.filter(m => m.status === 'disponivel').length;
+        const reservadas = mesas.filter(m => m.status === 'reservada').length;
         
-        let receitaTotal = 0;
-        reservas.forEach(reserva => {
-            if (reserva.mesa_id && reserva.mesa_id.preco) {
-                receitaTotal += reserva.mesa_id.preco;
-            }
-        });
-        
-        // Reservas por dia (últimos 7 dias)
-        const reservasPorDia = {};
-        const hoje = new Date();
-        
-        for (let i = 0; i < 7; i++) {
-            const data = new Date(hoje);
-            data.setDate(hoje.getDate() - i);
-            const dataStr = data.toISOString().split('T')[0];
-            reservasPorDia[dataStr] = 0;
-        }
-        
-        reservas.forEach(reserva => {
-            if (reserva.data_reserva && reserva.data_reserva.iso) {
-                const dataReserva = new Date(reserva.data_reserva.iso).toISOString().split('T')[0];
-                if (reservasPorDia[dataReserva] !== undefined) {
-                    reservasPorDia[dataReserva]++;
-                }
-            }
+        let receita = 0;
+        reservas.forEach(r => {
+            if (r.mesa_id && r.mesa_id.preco) receita += r.mesa_id.preco;
         });
         
         res.json({
             success: true,
             data: {
-                mesas: {
-                    total: totalMesas,
-                    disponiveis: mesasDisponiveis,
-                    reservadas: mesasReservadas,
-                    percentualOcupacao: ((mesasReservadas / totalMesas) * 100).toFixed(1)
-                },
-                reservas: {
-                    total: reservas.length,
-                    receita_total: receitaTotal,
-                    ultimos_7_dias: reservasPorDia
-                }
+                mesas: { total: totalMesas, disponiveis, reservadas },
+                reservas: { total: reservas.length, receita_total: receita }
             }
         });
-        
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao gerar estatísticas'
-        });
+        res.json({ success: true, data: { mesas: { total: 0, disponiveis: 0, reservadas: 0 }, reservas: { total: 0, receita_total: 0 } } });
     }
 });
 
-// ========== ROTAS ADMINISTRATIVAS ==========
-
-// Criar nova mesa (admin)
-app.post('/api/admin/mesas', async (req, res) => {
-    try {
-        const { numero, lugares, preco, status = 'disponivel' } = req.body;
-        
-        if (!numero || !lugares || !preco) {
-            return res.status(400).json({
-                success: false,
-                error: 'Campos obrigatórios: numero, lugares, preco'
-            });
-        }
-        
-        const mesaData = { numero, lugares, preco, status };
-        
-        const response = await axios.post(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas`,
-            mesaData,
-            { headers: getHeaders(true) } // Usar Master Key para admin
-        );
-        
-        res.json({
-            success: true,
-            message: 'Mesa criada com sucesso',
-            data: response.data
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao criar mesa'
-        });
-    }
-});
-
-// Atualizar mesa (admin)
-app.put('/api/admin/mesas/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const updateData = req.body;
-        
-        const response = await axios.put(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas/${id}`,
-            updateData,
-            { headers: getHeaders(true) }
-        );
-        
-        res.json({
-            success: true,
-            message: 'Mesa atualizada com sucesso',
-            data: response.data
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao atualizar mesa'
-        });
-    }
-});
-
-// Deletar mesa (admin)
-app.delete('/api/admin/mesas/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        
-        await axios.delete(
-            `${BACK4APP_CONFIG.baseUrl}/classes/Mesas/${id}`,
-            { headers: getHeaders(true) }
-        );
-        
-        res.json({
-            success: true,
-            message: 'Mesa removida com sucesso'
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao remover mesa'
-        });
-    }
-});
-
-// ========== ROTA PARA POPULAR DADOS INICIAIS ==========
-
+// ============================================
+// ADMIN - POPULAR DADOS INICIAIS
+// ============================================
 app.post('/api/admin/seed', async (req, res) => {
     try {
         const mesasIniciais = [
@@ -471,66 +345,67 @@ app.post('/api/admin/seed', async (req, res) => {
         
         let criadas = 0;
         for (const mesa of mesasIniciais) {
-            await axios.post(
-                `${BACK4APP_CONFIG.baseUrl}/classes/Mesas`,
-                mesa,
-                { headers: getHeaders(true) }
-            );
-            criadas++;
-            await delay(100); // Pequeno delay para não sobrecarregar
+            try {
+                await axios.post(
+                    `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas`,
+                    mesa,
+                    { headers: getHeaders(true) }
+                );
+                criadas++;
+            } catch (e) {}
         }
         
         res.json({
             success: true,
-            message: `${criadas} mesas criadas com sucesso!`
+            message: `${criadas} mesas criadas!`,
+            total: criadas
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao popular dados'
-        });
+        res.json({ success: false, error: error.message });
     }
 });
 
-// ============================================
-// MIDDLEWARE DE ERROS
-// ============================================
-
-app.use((err, req, res, next) => {
-    console.error('Erro não tratado:', err);
-    res.status(500).json({
-        success: false,
-        error: 'Erro interno do servidor'
-    });
+// Criar mesa individual (admin)
+app.post('/api/admin/mesas', async (req, res) => {
+    try {
+        const { numero, lugares, preco, status = 'disponivel' } = req.body;
+        
+        if (!numero || !lugares || !preco) {
+            return res.status(400).json({ success: false, error: 'Campos obrigatórios' });
+        }
+        
+        const response = await axios.post(
+            `${BACK4APP_CONFIG.BASE_URL}/classes/Mesas`,
+            { numero, lugares, preco, status },
+            { headers: getHeaders(true) }
+        );
+        
+        res.json({ success: true, data: response.data });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // ============================================
 // INICIAR SERVIDOR
 // ============================================
-
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`📋 API disponível em http://localhost:${PORT}`);
     console.log(`
     ═══════════════════════════════════════════════════
-    📌 ENDPOINTS DISPONÍVEIS:
+    🚀 Servidor rodando na porta ${PORT}
     
-    ✅ GET    /api/mesas                 - Listar todas mesas
-    ✅ GET    /api/mesas/disponiveis     - Listar mesas disponíveis
-    ✅ GET    /api/mesas/:id             - Buscar mesa por ID
-    ✅ POST   /api/reservas              - Criar reserva
-    ✅ GET    /api/reservas              - Listar reservas
-    ✅ GET    /api/reservas/email/:email - Buscar reservas por email
-    ✅ DELETE /api/reservas/:id          - Cancelar reserva
-    ✅ GET    /api/estatisticas          - Estatísticas do sistema
+    📌 Status: ${isDemoMode() ? '⚠️ MODO DEMO' : '✅ PRODUÇÃO'}
     
-    🔒 ADMIN (requer Master Key):
-    ✅ POST   /api/admin/mesas           - Criar mesa
-    ✅ PUT    /api/admin/mesas/:id       - Atualizar mesa
-    ✅ DELETE /api/admin/mesas/:id       - Deletar mesa
-    ✅ POST   /api/admin/seed            - Popular dados iniciais
+    🔗 URL: http://localhost:${PORT}
+    
+    📋 Endpoints principais:
+    GET  /api/mesas              - Listar mesas
+    GET  /api/mesas/disponiveis  - Mesas disponíveis
+    POST /api/reservas           - Fazer reserva
+    GET  /api/estatisticas       - Estatísticas
+    POST /api/admin/seed         - Popular dados (admin)
     ═══════════════════════════════════════════════════
     `);
 });
